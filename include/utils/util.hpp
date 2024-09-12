@@ -1,5 +1,12 @@
 #pragma once
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386) || defined(_M_IX86)
+    #define TONGRAMS_X86_ARCHITECTURE
+    #include <xmmintrin.h>
+#else
+    #warning "x86/x64 specific optimizations are not available on this architecture"
+#endif
+
 #include <iostream>
 #include <vector>
 #include <fstream>
@@ -10,9 +17,11 @@
 #include <locale>
 #include <string.h>
 
-#include <xmmintrin.h>
-#if TONGRAMS_USE_POPCNT
-#include <smmintrin.h>
+#ifdef TONGRAMS_X86_ARCHITECTURE
+    #include <xmmintrin.h>
+    #if TONGRAMS_USE_POPCNT
+    #include <smmintrin.h>
+    #endif
 #endif
 
 #include "utils/binary_header.hpp"
@@ -310,7 +319,7 @@ void check_remapping_order(uint8_t order) {
 
 void check_unk_logprob(float unk_logprob) {
     if (unk_logprob >= 0.0) {
-        throw std::invalid_argument("log probability of <unk> must be < 0.0");
+        throw std::invalid_argument("log probability of   must be < 0.0");
     }
 }
 
@@ -348,7 +357,12 @@ inline static uint64_t toull(const char* s) {
 
 template <typename T>
 inline void prefetch(T const* ptr) {
+#ifdef TONGRAMS_X86_ARCHITECTURE
     _mm_prefetch((const char*)ptr, _MM_HINT_T0);
+#else
+    // No-op or alternative implementation for non-x86 architectures
+    (void)ptr;
+#endif
 }
 
 void check(uint64_t index, uint64_t got, uint64_t expected,
@@ -501,7 +515,7 @@ inline uint64_t bytes_sum(uint64_t x) {
 }
 
 inline uint64_t popcount(uint64_t x) {
-#if TONGRAMS_USE_POPCNT
+#if defined(TONGRAMS_X86_ARCHITECTURE) && TONGRAMS_USE_POPCNT
     return uint64_t(_mm_popcnt_u64(x));
 #else
     return bytes_sum(byte_counts(x));
@@ -512,7 +526,7 @@ inline uint64_t popcount(uint64_t x) {
 // "A Fast x86 Implementation of Select" by
 // P. Pandey, M. A. Bender, and R. Johnson
 // the algorithm uses only four x86 machine instructions,
-// two of which were introduced in Intel’s Haswell CPUs in 2013
+// two of which were introduced in Intel's Haswell CPUs in 2013
 // source: https://github.com/splatlab/rankselect/blob/master/popcount.h
 inline uint64_t select64_pdep_tzcnt(uint64_t x, const uint64_t k) {
     uint64_t i = 1ULL << k;
@@ -523,7 +537,7 @@ inline uint64_t select64_pdep_tzcnt(uint64_t x, const uint64_t k) {
 
 inline uint64_t select_in_word(const uint64_t x, const uint64_t k) {
     assert(k < popcount(x));
-#if TONGRAMS_USE_PDEP
+#if defined(TONGRAMS_X86_ARCHITECTURE) && TONGRAMS_USE_PDEP
     return select64_pdep_tzcnt(x, k);
 #else
     uint64_t byte_sums = byte_counts(x) * ones_step_8;
